@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 # ==================================
 
 # ========= program imports ========
-import stockbot.architecture.types as archtypes
+import archtorch.architecture.types as archtypes
 # ==================================
 
 class BasicWriter:

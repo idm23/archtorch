@@ -10,8 +10,8 @@ import torch
 # ==================================
 
 # ========= program imports ========
-import stockbot.architecture.exceptions as archexcp
-import stockbot.architecture.types as archtypes
+import archtorch.architecture.exceptions as archexcp
+import archtorch.architecture.types as archtypes
 # ==================================
 
 class Component(torch.nn.Module):

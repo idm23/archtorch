@@ -9,9 +9,9 @@ import torch
 # ==================================
 
 # ========= program imports ========
-import stockbot.architecture.types as archtypes
-import stockbot.architecture.exceptions as archexcp
-import stockbot.architecture.dag_objs as archdag
+import archtorch.architecture.types as archtypes
+import archtorch.architecture.exceptions as archexcp
+import archtorch.architecture.dag_objs as archdag
 # ==================================
 
 def dict_append(
