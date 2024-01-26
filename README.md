@@ -6,6 +6,8 @@ ArchTorch is a tool for building and training Deep Learning Models. It was inspi
 
 TODO:
 
+First install [PyTorch](https://pytorch.org/get-started/locally/) yourself. I'd love to put this in the setup.py but it seems to be a common problem enough that I'm not willing to solve it personally. 
+
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
   
 ```bash

@@ -1,0 +1,10 @@
+Metadata-Version: 2.1
+Name: archtorch
+Version: 0.9.0
+Summary: # ArchTorch
+Author: Ian Mackey
+Author-email: idm@ianmackey.net
+Requires-Python: <3.12
+Requires-Dist: torch>=2.1.0
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: pytest
