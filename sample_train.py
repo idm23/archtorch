@@ -11,22 +11,27 @@ import torch
 # ==================================
 
 # ========= program imports ========
+#import archtorch.basemodels.standardblock archstrd
 # ==================================
 
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def main():
+    pass
+
+
+if __name__ == "__main__":
+    main()
+
+"""
 def directional_objfn(model_output, target_data):
     return torch.nn.functional.binary_cross_entropy_with_logits(model_output, (target_data[:, :, -1, 0] > 0).float())
 
 def collate_fn(data):
     input_data, target_data = zip(*data)
-    input_data = torch.stack(input_data).to(sbc.DEVICE)
-    target_data = torch.stack(target_data).to(sbc.DEVICE)
-    return {'rawOHLCV' : input_data}, {'fourteenDaysOut': target_data}
-
-def visualize_data_pass(self, tag_prefix, epoch):
-    sua.add_scalars(self.writer, tag_prefix, epoch, self.all_losses, self.all_outputs, self.all_targets)
-    sua.add_roc(self.writer, tag_prefix, epoch, self.all_outputs, self.all_targets)
-    sua.add_histograms(self.writer, tag_prefix, epoch, self.all_outputs, self.all_targets)
-    #sua.add_images(self.writer, tag_prefix, epoch, self.all_inputs, self.all_outputs, self.all_targets)
+    input_data = torch.stack(input_data).to(DEVICE)
+    target_data = torch.stack(target_data).to(DEVICE)
+    return {'imagea' : input_data}, {'fourteenDaysOut': target_data}
 
 def main():
     jan1_2023 = dt.date.fromisocalendar(2023, 1, 1)
@@ -73,3 +78,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+"""

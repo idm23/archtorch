@@ -10,7 +10,7 @@ import torch
 
 # ========= program imports ========
 import archtorch.architecture.types as archtypes
-import archtorch.architecture.exceptions as archexcp
+import archtorch.exceptions as archexcp
 import archtorch.architecture.dag_objs as archdag
 # ==================================
 
