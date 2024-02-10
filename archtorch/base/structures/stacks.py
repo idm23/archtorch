@@ -1,8 +1,9 @@
-"""File containing basic encoder architectures
-(Generally trades data-dimensionality for feature-dimensionality)
+"""File containing stacked block structures and
+functions useful for constructing them
 """
 # ======== standard imports ========
-from typing import Iterable, Optional, Callable
+from typing import Iterable, Callable, Optional
+import inspect
 # ==================================
 
 # ======= third party imports ======
@@ -10,21 +11,105 @@ import torch
 # ==================================
 
 # ========= program imports ========
+import archtorch.base.blocks as archblocks
 import archtorch.exceptions as archexcp
-import archtorch.basemodels.structures as archstructs
-import archtorch.basemodels.basicblocks as archblocks
 # ==================================
 
-class ConvEncoder(archstructs.StackedBlocks):
+class StackedBlocks(torch.nn.Sequential):
+    def __init__(
+        self,
+        block_type:archblocks.Block,
+        ndims:int, n_levels:int,
+        initial_input_features:int, features_multiplier:float,
+        additional_operation_args:Iterable[Iterable],
+        block_kwargs:dict, operation_kwargs:dict,
+        operation_kwargs_override:Optional[Callable[[Iterable, dict], dict]] = None,
+        initial_feature_jump:Optional[int] = None,
+        final_feature_drop:Optional[int] = None,
+        raw_output:bool = True
+    ):
+        super().__init__()
+        if n_levels < 1:
+            raise archexcp.ModelConstructionError('Need to have at least 1 level for a stack')
+        self.ndims = ndims
+        self.n_levels = n_levels
+        self.initial_input_features = initial_input_features
+        self.features_multiplier = features_multiplier
+        self.block_kwargs = block_kwargs
+        self.operation_kwargs = operation_kwargs
+        self.initial_feature_jump = initial_feature_jump
+        self.final_feature_drop = final_feature_drop
+        self.raw_output = raw_output
+
+        self.block_type = block_type
+        self.unfilled_block_args_types = {
+            name:param.annotation
+            for name, param in inspect.signature(self.block_type.__init__).parameters.items()
+            if (
+                (name not in ['self', 'ndims', 'input_features', 'output_features', 'kwargs'])
+                and (param.default is inspect.Parameter.empty)
+            )
+        }
+        #print(self.unfilled_block_args_types)
+        # TODO: Check typing on additional_operation_args as well as casting out.
+        # If reference is necessary later, check Conv encoders
+        self.additional_operation_args = additional_operation_args
+
+        # TODO: Add typing support on operation_kwargs_override
+        if operation_kwargs_override is None:
+            self.operation_kwargs_override = lambda *given_operation_args, **operation_kwargs: operation_kwargs
+        else:
+            self.operation_kwargs_override = operation_kwargs_override
+        
+        self.initialize_blocks()
+    
+    def initialize_blocks(self) -> None:
+        input_features = self.initial_input_features
+        for level in range(self.n_levels):
+
+            # Handle feature growth
+            if level == 0 and self.initial_feature_jump is not None:
+                output_features = self.initial_feature_jump
+            elif level == (self.n_levels - 1) and self.final_feature_drop is not None:
+                output_features = self.final_feature_drop
+            else:
+                output_features = int(input_features * self.features_multiplier)            
+
+            # Base operational_kwargs off of the other parameters provided
+            ckwargs = self.operation_kwargs_override(
+                *self.additional_operation_args[level],
+                **self.operation_kwargs
+            )
+
+            # Ensure last layer doesn't have block arguments
+            if level != (self.n_levels - 1):
+                ckwargs.update(self.block_kwargs)
+            elif level == (self.n_levels - 1) and not self.raw_output:
+                ckwargs.update(self.block_kwargs)
+                
+            # Build and stack block
+            self.append(
+                self.block_type(
+                    self.ndims, input_features, output_features,
+                    *self.additional_operation_args[level],
+                    **ckwargs
+                )
+            )
+            input_features = output_features
+        
+        self.output_features = output_features
+    
+class ConvStack(StackedBlocks):
     def __init__(
             self,
-            ndims:int, initial_input_features:int,
-            n_levels:int, features_multiplier:float,
+            conv_block_type:archblocks.ABSTRACTConvBlock,
+            ndims:int, n_levels:int,
+            initial_input_features:int, features_multiplier:float,
             kernel_size:int|Iterable[int]|Iterable[int|Iterable[int]],
+            operation_kwargs_override:Optional[Callable[[Iterable, dict], dict]] = None,
             initial_feature_jump:Optional[int] = None,
             final_feature_drop:Optional[int] = None,
-            operation_kwargs_override:Optional[Callable[[Iterable, dict], dict]] = None,
-            conv_block_type:archblocks.ABSTRACTConvBlock = archblocks.BasicConvBlock,
+            raw_output:bool = True,
             **kwargs
         ):
         self.ndims = ndims
@@ -32,15 +117,17 @@ class ConvEncoder(archstructs.StackedBlocks):
         block_kwargs, conv_kwargs = archblocks.split_block_and_operation_kwargs(
             conv_block_type.DIM2CONV[ndims], **kwargs
         )
-        self.kernel_sizes = self.get_kernel_sizes(kernel_size)  
 
+        self.kernel_sizes = self.get_kernel_sizes(kernel_size)
         super().__init__(
-            conv_block_type, ndims, initial_input_features,
-            n_levels, features_multiplier, block_kwargs, conv_kwargs,
+            conv_block_type, ndims, n_levels,
+            initial_input_features, features_multiplier,
             [(ksize,) for ksize in self.kernel_sizes], # Wrap since this is our only additonal argument,
+            block_kwargs, conv_kwargs,
+            operation_kwargs_override = operation_kwargs_override,
             initial_feature_jump = initial_feature_jump,
             final_feature_drop = final_feature_drop,
-            operation_kwargs_override=operation_kwargs_override
+            raw_output = raw_output
         )
 
     def get_kernel_input_type(
@@ -70,11 +157,11 @@ class ConvEncoder(archstructs.StackedBlocks):
         kernel_typing = self.get_kernel_input_type(kernel_size)
         if kernel_typing == int:
             # Cast out int to be kernel size for all conv_blocks
-            kernel_sizes = [(kernel_size,)*self.ndims for level in self.n_levels]
+            kernel_sizes = [(kernel_size,)*self.ndims for level in range(self.n_levels)]
         elif kernel_typing == Iterable[int] and len(kernel_size) == self.ndims:
             # If this is a tuple with the same dimensionality as the input,
             # cast out the tuple for all conv_blocks
-            kernel_sizes = [kernel_size for level in self.n_levels]
+            kernel_sizes = [kernel_size for level in range(self.n_levels)]
         elif kernel_typing == Iterable[int] and len(kernel_size) == self.n_levels:
             # If this is a tuple with the same number of entries as levels in the stack,
             # enumerate the tuple as ints for each conv_block
@@ -106,32 +193,9 @@ class ConvEncoder(archstructs.StackedBlocks):
             raise archexcp.ModelConstructionError(f'Invalid argument supplied for kernel_size: {kernel_size}')
         
         return kernel_sizes
-
-
-class HalvingConvEncoder(ConvEncoder):
-    def __init__(
-            self,
-            ndims:int, initial_input_features:int,
-            n_levels:int, features_multiplier:float,
-            kernel_size:int|Iterable[int]|Iterable[int|Iterable[int]],
-            initial_feature_jump:Optional[int] = None,
-            final_feature_drop:Optional[int] = None,
-            conv_block_type:archblocks.ABSTRACTConvBlock = archblocks.BasicConvBlock,
-            **kwargs
-        ):
-
-        super().__init__(
-            ndims, initial_input_features,
-            n_levels, features_multiplier,
-            kernel_size,
-            initial_feature_jump = initial_feature_jump,
-            final_feature_drop = final_feature_drop, 
-            operation_kwargs_override=self.get_halving_kwargs,
-            conv_block_type= conv_block_type,
-            **kwargs
-        )
-
-    def get_halving_kwargs(self, kernel_size:int|Iterable[int], **conv_kwargs:dict):
+    
+    @classmethod
+    def halving_kwargs_override(cls, kernel_size:int|Iterable[int], **conv_kwargs:dict):
         if isinstance(kernel_size, int):
             stride = 2
             padding = ((kernel_size + 1) // 2) - 1
@@ -142,57 +206,3 @@ class HalvingConvEncoder(ConvEncoder):
         conv_kwargs['stride'] = stride
         conv_kwargs['padding'] = padding
         return conv_kwargs
-    
-def test_basic_conv_encoder():
-    B = 64
-    input_features = 3
-    H = W = D = 32
-    input_shape = (B, input_features, H, W)
-    encoder_input = torch.randn(*input_shape)
-    kernel_sizes = [5,(3,2),3]
-    conv_encoder_no_extras = ConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, initial_feature_jump=32
-    )
-    print(conv_encoder_no_extras, conv_encoder_no_extras(encoder_input).shape)
-    conv_encoder_no_block_conv_args = ConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, initial_feature_jump=32,
-        padding = 'same', bias = False
-    )
-    print(conv_encoder_no_block_conv_args, conv_encoder_no_block_conv_args(encoder_input).shape)
-    conv_encoder_block_conv_args = ConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, initial_feature_jump=32,
-        padding = 'same', bias = False,
-        activation = 'relu', norm = 'bn', dropout = 0.1
-    )
-    print(conv_encoder_block_conv_args, conv_encoder_block_conv_args(encoder_input).shape)
-
-def test_halving_conv_encoder():
-    B = 64
-    input_features = 3
-    H = W = D = 32
-    input_shape = (B, input_features, H, W)
-    encoder_input = torch.randn(*input_shape)
-    kernel_sizes = [5,(3,2),3]
-    conv_encoder_no_extras = HalvingConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, 32
-    )
-    print(conv_encoder_no_extras, conv_encoder_no_extras(encoder_input).shape)
-    conv_encoder_no_block_conv_args = HalvingConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, 32,
-        padding = 'same', bias = False
-    )
-    print(conv_encoder_no_block_conv_args, conv_encoder_no_block_conv_args(encoder_input).shape)
-    conv_encoder_block_conv_args = HalvingConvEncoder(
-        2, input_features, len(kernel_sizes), 2, kernel_sizes, 32,
-        padding = 'same', bias = False,
-        activation = 'relu', norm = 'bn', dropout = 0.1
-    )
-    print(conv_encoder_block_conv_args, conv_encoder_block_conv_args(encoder_input).shape)
-    
-def quicktests():
-    test_basic_conv_encoder()
-    test_halving_conv_encoder()
-
-if __name__ == "__main__":
-    quicktests()
-

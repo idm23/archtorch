@@ -3,6 +3,7 @@ composed of PyTorch Modules
 """
 # ======== standard imports ========
 from collections import deque
+from typing import Optional
 # ==================================
 
 # ======= third party imports ======
@@ -21,7 +22,7 @@ class Component(torch.nn.Module):
             self,
             batchless_input_shapes: dict[str, tuple],
             batchless_output_shapes: dict[str, tuple],
-            name:str|None
+            name:Optional[str] = None
         ):
         super().__init__()
         
@@ -36,7 +37,6 @@ class Component(torch.nn.Module):
         self.name:str = name
 
         self._assert_valid_inputs()
-        self._construct_modules()
         self.internal_loss_fns:dict[str, archtypes.LOSSFN] = {}
         self.external_loss_fns:dict[str, tuple[str, archtypes.LOSSFN, str]] = {}
         self.parent_components:list[Component] = []
@@ -62,9 +62,6 @@ class Component(torch.nn.Module):
 
     def add_child(self, child):
         self.child_components.append(child)
-
-    def _construct_modules(self):
-        raise NotImplementedError('Implement in subclass')
     
     def _model_pass(
             self,
